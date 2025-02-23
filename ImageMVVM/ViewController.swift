@@ -2,19 +2,21 @@
 //  ViewController.swift
 //  ImageMVVM
 //
-//  Created by Md Saddam Hossain on 21.02.2025.
-//
+//  Created by Md Saddam Hossain
 
 import UIKit
 
 class ViewController: UIViewController {
     var viewModel: MainViewModel = MainViewModel()
     var dataModel: [ImageModel]?
+    let imageCache = NSCache<AnyObject, UIImage>()
     
     @IBOutlet weak var imagesCollectionView: UICollectionView!
+    var imageTasks: [IndexPath: URLSessionDataTask] = [:]
     
     var imagesDataSource: [ImageCollectionCellViewModel]? {
         didSet {
+            
             if let dataSource = imagesDataSource {
                 for i in 0..<dataSource.count {
                     APICaller.shared.downloadImage(imgURL: dataSource[i].downloadURL!) { img in
@@ -26,6 +28,7 @@ class ViewController: UIViewController {
                     }
                 }
             }
+            
         }
     }
     
@@ -44,6 +47,8 @@ class ViewController: UIViewController {
         imagesCollectionView.register(UINib(nibName: "ImageCollectionViewCell", bundle: nil), forCellWithReuseIdentifier: "ImageCollectionViewCell")
         imagesCollectionView.dataSource = self
         imagesCollectionView.delegate = self
+        imagesCollectionView.prefetchDataSource = self
+        
     }
     
     func bindViewModel() {
@@ -73,8 +78,8 @@ class ViewController: UIViewController {
             print("Internet is available")
         } else {
             print("No internet connection")
-           // showNoInternetAlert()
-          //  return
+            // showNoInternetAlert()
+            //  return
         }
         
     }
@@ -85,7 +90,39 @@ class ViewController: UIViewController {
         present(alert, animated: true, completion: nil)
     }
     
-    
+    /*
+    func loadImage(url: URL?, imageView: UIImageView, indexPath: IndexPath) {
+        // Check if the image is already cached
+        if let cachedImage = imageCache.object(forKey: url as AnyObject) {
+            imageView.image = cachedImage
+            return
+        }
+        
+        // Download image asynchronously
+        guard let url = url else { return }
+        
+        // Create a URLSession data task
+        let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+            guard let self = self, let data = data, let image = UIImage(data: data), error == nil else { return }
+            
+            // Cache the image
+            self.imageCache.setObject(image, forKey: url as AnyObject)
+            
+            // Make sure the cell is still displaying this image before setting it
+            DispatchQueue.main.async {
+                if let visibleCell = self.imagesCollectionView.cellForItem(at: indexPath) as? ImageCollectionViewCell {
+                    visibleCell.imageView.image = image
+                }
+            }
+        }
+        
+        // Start the image download task
+        task.resume()
+        
+        // Store the task reference to cancel if needed
+        imageTasks[indexPath] = task
+    }
+     */
 }
 extension ViewController: UICollectionViewDataSource {
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
@@ -96,7 +133,20 @@ extension ViewController: UICollectionViewDataSource {
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         
         let cell = imagesCollectionView.dequeueReusableCell(withReuseIdentifier: "ImageCollectionViewCell", for: indexPath) as! ImageCollectionViewCell
+        cell.imageView.image = UIImage(named: "loading")
         
+        /*
+         cell.imageView.image = UIImage(named: "loading")
+         
+         imageTasks[indexPath]?.cancel()
+         
+         // Load the image asynchronously
+         //  loadImage(imagesDataSource?[indexPath.row].downloadURL;, imageView: cell.imageView)
+         
+         
+         //loadImage(url: imagesDataSource?[indexPath.row].downloadURL, imageView: cell.imageView)
+         loadImage(url: imagesDataSource?[indexPath.row].downloadURL, imageView: cell.imageView, indexPath: indexPath)
+         */
         cell.loadCell(imgModel: imagesDataSource?[indexPath.row])
         return cell
     }
@@ -125,4 +175,28 @@ extension ViewController: UICollectionViewDelegateFlowLayout {
         return 2
     }
     
+}
+extension ViewController: UICollectionViewDataSourcePrefetching {
+    func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
+        
+        for indexPath in indexPaths {
+            let imageUrl = imagesDataSource?[indexPath.item].downloadURL
+            print("DataSourcePrefetching")
+            
+            // Prefetch images and store them in cache
+            DispatchQueue.global(qos: .background).async { [self] in
+                chacheImage(imageUrl: imageUrl)
+            }
+        }
+        
+    }
+    
+    func chacheImage(imageUrl: URL?) {
+        
+        if let url = imageUrl, let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
+            //  imageCache.setObject(image, forKey: imageUrl?.absoluteString as NSString)
+            APICaller.cache.setObject(image, forKey: url as AnyObject)
+        }
+        
+    }
 }
